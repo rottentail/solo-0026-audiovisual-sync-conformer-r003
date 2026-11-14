@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/rottentail/solo-0026-audiovisual-sync-conformer/internal/httpapi"
+	"github.com/rottentail/solo-0026-audiovisual-sync-conformer/internal/media"
 	appservice "github.com/rottentail/solo-0026-audiovisual-sync-conformer/internal/service"
 	"github.com/rottentail/solo-0026-audiovisual-sync-conformer/internal/storage"
 )
@@ -19,7 +20,18 @@ import (
 func main() {
 	addr := flag.String("addr", ":8096", "HTTP listen address")
 	dataRoot := flag.String("data", "./var/sync-conformer", "persistent data root")
+	ffmpegDir := flag.String(
+		"ffmpeg-dir",
+		"",
+		"directory containing the pinned ffmpeg and ffprobe binaries (default: $SYNC_FFMPEG_DIR or tools/ffmpeg)",
+	)
 	flag.Parse()
+
+	toolchain, err := media.EnsureBackend(*ffmpegDir)
+	if err != nil {
+		log.Fatalf("initialize media backend: %v", err)
+	}
+	log.Printf("media backend: %s at %s", toolchain.Describe(), toolchain.Dir())
 
 	repository, err := storage.New(*dataRoot)
 	if err != nil {

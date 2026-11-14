@@ -1,6 +1,7 @@
 package service
 
 import (
+	"context"
 	"encoding/base64"
 	"fmt"
 	"time"
@@ -23,6 +24,12 @@ func (s *Service) Repository() *storage.Repository {
 }
 
 func (s *Service) CreateTake(input domain.CreateTakeInput) (domain.TakeResult, error) {
+	return s.CreateTakeContext(context.Background(), input)
+}
+
+// CreateTakeContext admits a take, cancelling any in-flight decoder work when
+// ctx is cancelled.
+func (s *Service) CreateTakeContext(ctx context.Context, input domain.CreateTakeInput) (domain.TakeResult, error) {
 	if err := domain.ValidateCreateTake(input); err != nil {
 		return domain.TakeResult{}, err
 	}
@@ -34,11 +41,11 @@ func (s *Service) CreateTake(input domain.CreateTakeInput) (domain.TakeResult, e
 	if err != nil {
 		return domain.TakeResult{}, err
 	}
-	audioClip, err := media.InspectAudio(audio)
+	audioClip, err := media.InspectAudioContext(ctx, audio)
 	if err != nil {
 		return domain.TakeResult{}, domain.NewError("invalid_audio", 422, "%s", err)
 	}
-	videoClip, err := media.InspectVideo(video)
+	videoClip, err := media.InspectVideoContext(ctx, video)
 	if err != nil {
 		return domain.TakeResult{}, domain.NewError("invalid_video", 422, "%s", err)
 	}
@@ -73,6 +80,17 @@ func (s *Service) GetTake(id string) (domain.MediaTake, error) {
 }
 
 func (s *Service) Analyze(takeID string, input domain.CreateAnalysisInput) (domain.AnalysisResult, error) {
+	return s.AnalyzeContext(context.Background(), takeID, input)
+}
+
+// AnalyzeContext detects audiovisual drift, cancelling any in-flight decoder
+// work when ctx is cancelled. A cancelled run still persists a terminal failed
+// analysis, so no usable event pair is left behind.
+func (s *Service) AnalyzeContext(
+	ctx context.Context,
+	takeID string,
+	input domain.CreateAnalysisInput,
+) (domain.AnalysisResult, error) {
 	if err := domain.ValidateIdentifier("take_id", takeID); err != nil {
 		return domain.AnalysisResult{}, err
 	}
@@ -109,7 +127,7 @@ func (s *Service) Analyze(takeID string, input domain.CreateAnalysisInput) (doma
 	if err != nil {
 		return s.failAnalysis(record, "take_media_unavailable", err.Error())
 	}
-	measurement, err := media.AnalyzeSync(audio, video)
+	measurement, err := media.AnalyzeSyncContext(ctx, audio, video)
 	if err != nil {
 		return s.failAnalysis(record, "sync_detection_failed", err.Error())
 	}
@@ -177,6 +195,17 @@ func (s *Service) CreateConform(
 	analysisID string,
 	input domain.CreateConformInput,
 ) (domain.ConformResult, error) {
+	return s.CreateConformContext(context.Background(), analysisID, input)
+}
+
+// CreateConformContext renders a conformed bundle, cancelling any in-flight
+// decoder work when ctx is cancelled. A cancelled render still persists a
+// terminal failed job and publishes no bundle.
+func (s *Service) CreateConformContext(
+	ctx context.Context,
+	analysisID string,
+	input domain.CreateConformInput,
+) (domain.ConformResult, error) {
 	if err := domain.ValidateIdentifier("analysis_id", analysisID); err != nil {
 		return domain.ConformResult{}, err
 	}
@@ -235,19 +264,22 @@ func (s *Service) CreateConform(
 	if err := s.repository.UpdateConform(record); err != nil {
 		return domain.ConformResult{}, err
 	}
-	return s.renderConform(record)
+	return s.renderConformContext(ctx, record)
 }
 
-func (s *Service) renderConform(record domain.ConformJob) (domain.ConformResult, error) {
+func (s *Service) renderConformContext(
+	ctx context.Context,
+	record domain.ConformJob,
+) (domain.ConformResult, error) {
 	audio, video, err := s.repository.ReadTakeMedia(record.TakeID)
 	if err != nil {
 		return s.failConform(record, "take_media_unavailable", err.Error())
 	}
-	alignedAudio, err := media.AlignAudio(audio, record.MeasuredOffsetMS, record.MaxCorrectionMS)
+	alignedAudio, err := media.AlignAudioContext(ctx, audio, record.MeasuredOffsetMS, record.MaxCorrectionMS)
 	if err != nil {
 		return s.failConform(record, domain.AsError(err).Code, domain.AsError(err).Message)
 	}
-	conformedVideo, videoInfo, err := media.NormalizeY4M(video)
+	conformedVideo, videoInfo, err := media.NormalizeY4MContext(ctx, video)
 	if err != nil {
 		return s.failConform(record, "video_conform_failed", err.Error())
 	}

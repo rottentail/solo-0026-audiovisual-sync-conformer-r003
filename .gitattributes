@@ -1,0 +1,6 @@
+# Pinned media toolchain binaries are committed as-is.
+tools/ffmpeg/linux_amd64/ffmpeg binary
+tools/ffmpeg/linux_amd64/ffprobe binary
+tools/ffmpeg/linux_arm64/ffmpeg binary
+tools/ffmpeg/linux_arm64/ffprobe binary
+tools/ffmpeg/source/ffmpeg-7.1.5.tar.xz binary

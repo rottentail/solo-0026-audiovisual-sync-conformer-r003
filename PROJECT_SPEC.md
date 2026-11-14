@@ -102,7 +102,8 @@ temporary directory and become visible only through one directory rename.
 Entry point: `POST /v1/takes`
 
 1. Validate the identifier, name, size budgets, and strict base64 encoding.
-2. Probe every WAV chunk and every Y4M frame before accepting the take.
+2. Admit every WAV chunk and every Y4M frame against the project boundary, then
+   probe and decode both payloads with the pinned FFmpeg toolchain.
 3. Measure media descriptors and compute a combined digest.
 4. Persist payloads and metadata under an exclusive take namespace.
 
@@ -114,7 +115,8 @@ or conflict code and leaves no visible take directory.
 Entry point: `POST /v1/takes/{take_id}/sync-analyses`
 
 1. Load the admitted take and create a queued analysis.
-2. Decode both media payloads again at the analysis boundary.
+2. Decode both media payloads again at the analysis boundary through the pinned
+   toolchain, cancelling the decoder processes if the request is cancelled.
 3. Detect a sharp audio onset and a picture luma flash.
 4. Compare event times against duration and confidence limits.
 5. Persist a ready or failed terminal record.
@@ -142,8 +144,9 @@ returns a terminal job with a stable error code and no readable bundle.
 - `internal/service`: workflow orchestration, idempotency, lifecycle
   transitions, and failure propagation.
 - `internal/domain`: identifiers, records, state rules, and stable errors.
-- `internal/media`: WAV and Y4M probing, signal detection, audio alignment, and
-  deterministic media encoding.
+- `internal/media`: WAV and Y4M admission rules, signal detection, audio
+  alignment, deterministic media encoding, and the verified pinned FFmpeg
+  toolchain under `internal/media/ffmpeg` used for probing and decoding.
 - `internal/storage`: namespaced persistence, per-identifier locking, atomic
   files, and atomic directory publication.
 
@@ -173,6 +176,17 @@ JSON errors use a stable envelope:
   }
 }
 ```
+
+## Media backend
+
+Probing and decoding are delegated to a pinned FFmpeg 7.1.5 toolchain shipped
+in `tools/ffmpeg/` and verified by SHA-256 digest and version at startup. The
+project boundary is enforced by `internal/media`, not by the tool: the
+demuxers are forced, the container rules are re-checked, and the decoder
+receives a canonical container rebuilt from the admitted bytes. Decoded sample
+and frame counts must match the admitted counts, so existing material keeps its
+sample values, picture content, and timing interpretation. Cancelled or
+timed-out decodes kill and reap the decoder process group.
 
 ## Validation plan
 

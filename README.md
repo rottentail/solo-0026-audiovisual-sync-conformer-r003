@@ -6,8 +6,9 @@ bounded review bundle with corrected audio timing.
 
 The implementation includes:
 
-- strict 16-bit PCM WAV chunk parsing and signal measurement;
-- planar 4:2:0 Y4M header, frame, and geometry validation;
+- probing and decoding through a pinned, digest-verified FFmpeg toolchain;
+- strict 16-bit PCM WAV chunk admission and signal measurement;
+- planar 4:2:0 Y4M header, frame, and geometry admission;
 - audio-onset and picture-flash detection with a confidence value;
 - signed drift analysis and a stable threshold policy;
 - sample-accurate audio alignment;
@@ -15,7 +16,7 @@ The implementation includes:
 - per-identifier locking and atomic directory publication;
 - a deterministic ZIP bundle with a matching receipt.
 
-Automated tests are intentionally deferred. A later task stage will add the
+Automated Go tests are intentionally deferred. A later task stage will add the
 test suite, fixtures, race checks, and test command. This baseline ships
 production workflow checks that exercise the implemented routes.
 
@@ -24,9 +25,45 @@ production workflow checks that exercise the implemented routes.
 - Go 1.23 or newer.
 - A writable data root for admitted media, analysis records, and conform
   bundles.
+- The pinned FFmpeg toolchain committed under `tools/ffmpeg/`. No system
+  `ffmpeg` is used, and no network service or database server is required.
 
-No third-party Go module, media binary, network service, or database server is
-required.
+## Media backend
+
+Container probing and sample/frame decoding run through a fixed FFmpeg build
+(version 7.1.5) that ships with the repository:
+
+```text
+tools/ffmpeg/
+├── build/build.sh                 reproducible build from the pinned source
+├── source/ffmpeg-7.1.5.tar.xz     source archive with a pinned SHA-256
+├── linux_amd64/ffmpeg, ffprobe    static, SHA-256 pinned
+└── linux_arm64/ffmpeg, ffprobe    static, SHA-256 pinned
+```
+
+The service verifies each binary's SHA-256 digest and reported version before
+it is used; a different host build is refused rather than silently trusted.
+The build enables only the two demuxers, two decoders, and two raw muxers the
+service needs, with no network protocols and no rescaling or resampling
+filters.
+
+The toolchain is located in this order:
+
+1. `-ffmpeg-dir` on `cmd/syncservice`;
+2. the `SYNC_FFMPEG_DIR` environment variable;
+3. `tools/ffmpeg/<os>_<arch>/`, searched from the working directory and the
+   executable directory upward.
+
+FFmpeg's format support is much wider than this project's, so the media
+package still defines the accepted boundary itself. It forces the `wav` and
+`yuv4mpegpipe` demuxers, re-checks the WAV chunk and Y4M header rules, and
+hands the decoder a canonical container rebuilt from the admitted bytes.
+Decoded sample counts and frame counts must equal the admitted chunk and frame
+counts, so existing material keeps exactly the same sample values, frame
+content, and timing interpretation. Any diagnostic FFmpeg emits for a payload
+is treated as a rejection. If a decode is cancelled or exceeds its time limit,
+the whole decoder process group is killed and reaped before the request
+returns.
 
 ## Build
 
@@ -46,8 +83,8 @@ Settings:
 
 - `-addr`: HTTP listen address, default `:8096`.
 - `-data`: persistent data root, default `./var/sync-conformer`.
-
-No environment variable is required.
+- `-ffmpeg-dir`: directory holding the pinned `ffmpeg` and `ffprobe`, default
+  `$SYNC_FFMPEG_DIR` or the vendored `tools/ffmpeg` location.
 
 ## HTTP interface
 
@@ -156,7 +193,8 @@ cmd/syncflowcheck/      production workflow checks
 internal/httpapi/       routing, JSON errors, limits, and media responses
 internal/service/       workflow orchestration and lifecycle control
 internal/domain/        records, validation, IDs, states, and stable errors
-internal/media/         WAV/Y4M codecs, signal detection, alignment, and packaging
+internal/media/         admission rules, signal detection, alignment, and packaging
+internal/media/ffmpeg/  verified pinned toolchain, strict probe and decode runner
 internal/storage/       locks, atomic writes, and repository operations
 ```
 
@@ -177,7 +215,15 @@ root is removed when the process exits.
 
 ## Media boundaries
 
-The baseline accepts one PCM WAV stream and one C420 Y4M stream per take.
-Compressed audio, compressed picture, multi-stream containers, captions, and
-network storage adapters are intentionally outside this baseline. Their real
-extension seams are recorded in `.task-source.json`.
+The service accepts one PCM WAV stream and one C420 Y4M stream per take:
+
+- WAV: RIFF/WAVE, integer PCM, 16-bit little-endian, one or two channels,
+  8 kHz to 192 kHz, whole interleaved frames only.
+- Y4M: a single progressive `C420jpeg`, `C420mpeg2`, or `C420` stream with even
+  dimensions up to 1920x1080, frame rate up to 120 fps, and at most 1200
+  frames.
+
+These limits stay in the media package even though the FFmpeg toolchain can
+decode far more. Compressed audio, compressed picture, multi-stream containers,
+captions, network storage adapters, and non-C420 picture are still outside the
+boundary, and their real extension seams are recorded in `.task-source.json`.

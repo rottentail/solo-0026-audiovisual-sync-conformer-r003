@@ -1,2 +1,6 @@
 var/
 *.tmp
+
+# Local scratch and FFmpeg build trees; pinned binaries are committed.
+.scratch/
+tools/ffmpeg/build/work-*/

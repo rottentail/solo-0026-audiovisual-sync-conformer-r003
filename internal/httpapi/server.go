@@ -61,7 +61,7 @@ func (api *API) createTake(w http.ResponseWriter, request *http.Request) {
 		writeFailure(w, err)
 		return
 	}
-	result, err := api.service.CreateTake(domain.CreateTakeInput{
+	result, err := api.service.CreateTakeContext(request.Context(), domain.CreateTakeInput{
 		TakeID:      payload.TakeID,
 		Name:        payload.Name,
 		Note:        payload.Note,
@@ -102,7 +102,7 @@ func (api *API) createAnalysis(w http.ResponseWriter, request *http.Request) {
 	if payload.MaxOffsetMS != nil {
 		maxOffsetMS = *payload.MaxOffsetMS
 	}
-	result, err := api.service.Analyze(request.PathValue("take_id"), domain.CreateAnalysisInput{
+	result, err := api.service.AnalyzeContext(request.Context(), request.PathValue("take_id"), domain.CreateAnalysisInput{
 		AnalysisID:    payload.AnalysisID,
 		MinConfidence: minConfidence,
 		MaxOffsetMS:   maxOffsetMS,
@@ -137,7 +137,7 @@ func (api *API) createConform(w http.ResponseWriter, request *http.Request) {
 	if payload.MaxCorrectionMS != nil {
 		maxCorrectionMS = *payload.MaxCorrectionMS
 	}
-	result, err := api.service.CreateConform(request.PathValue("analysis_id"), domain.CreateConformInput{
+	result, err := api.service.CreateConformContext(request.Context(), request.PathValue("analysis_id"), domain.CreateConformInput{
 		ConformID:       payload.ConformID,
 		MaxCorrectionMS: maxCorrectionMS,
 	})

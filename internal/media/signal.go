@@ -1,6 +1,7 @@
 package media
 
 import (
+	"context"
 	"fmt"
 	"math"
 	"sort"
@@ -9,11 +10,20 @@ import (
 )
 
 func AnalyzeSync(audioData, videoData []byte) (domain.Measurement, error) {
-	audio, err := InspectAudio(audioData)
+	return AnalyzeSyncContext(context.Background(), audioData, videoData)
+}
+
+// AnalyzeSyncContext is AnalyzeSync with a cancellation scope that reaches both
+// decoder processes.
+func AnalyzeSyncContext(
+	ctx context.Context,
+	audioData, videoData []byte,
+) (domain.Measurement, error) {
+	audio, err := InspectAudioContext(ctx, audioData)
 	if err != nil {
 		return domain.Measurement{}, fmt.Errorf("audio probe failed: %w", err)
 	}
-	video, err := InspectVideo(videoData)
+	video, err := InspectVideoContext(ctx, videoData)
 	if err != nil {
 		return domain.Measurement{}, fmt.Errorf("picture probe failed: %w", err)
 	}

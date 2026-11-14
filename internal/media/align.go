@@ -1,6 +1,7 @@
 package media
 
 import (
+	"context"
 	"fmt"
 	"math"
 
@@ -8,7 +9,18 @@ import (
 )
 
 func AlignAudio(audioData []byte, measuredOffsetMS int, maxCorrectionMS int) (domain.AlignedAudio, error) {
-	clip, err := InspectAudio(audioData)
+	return AlignAudioContext(context.Background(), audioData, measuredOffsetMS, maxCorrectionMS)
+}
+
+// AlignAudioContext is AlignAudio with a cancellation scope that reaches the
+// decoder process.
+func AlignAudioContext(
+	ctx context.Context,
+	audioData []byte,
+	measuredOffsetMS int,
+	maxCorrectionMS int,
+) (domain.AlignedAudio, error) {
+	clip, err := InspectAudioContext(ctx, audioData)
 	if err != nil {
 		return domain.AlignedAudio{}, fmt.Errorf("audio probe failed: %w", err)
 	}
